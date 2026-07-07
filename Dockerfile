@@ -1,7 +1,7 @@
 # Multi-stage build for NestJS application
 
 # Development stage
-FROM node:18-alpine AS development
+FROM node:22-alpine AS development
 
 # Set timezone
 RUN apk add --no-cache tzdata
@@ -34,7 +34,7 @@ RUN yarn prisma:generate
 RUN yarn build
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:22-alpine AS production
 
 # Set timezone
 RUN apk add --no-cache tzdata
@@ -58,7 +58,7 @@ WORKDIR /usr/src/app
 COPY package.json yarn.lock ./
 
 # Install only production dependencies
-RUN yarn install && yarn cache clean
+RUN yarn install --frozen-lockfile --production && yarn cache clean
 
 # Copy built application from development stage
 COPY --from=development /usr/src/app/dist ./dist
