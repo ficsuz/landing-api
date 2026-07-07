@@ -1,0 +1,21 @@
+{
+  "IS_NOT_EMPTY": "{property} should not be empty.",
+  "IS_DEFINED": "{property} is required.",
+  "IS_EMAIL": "{property} must be a valid email address.",
+  "IS_STRING": "{property} must be a string.",
+  "IS_INT": "{property} must be an integer.",
+  "IS_NUMBER": "{property} must be a number.",
+  "IS_BOOLEAN": "{property} must be a boolean.",
+  "IS_ARRAY": "{property} must be an array.",
+  "ARRAY_NOT_EMPTY": "{property} must not be empty.",
+  "IS_OBJECT": "{property} must be an object.",
+  "IS_UUID": "{property} must be a valid UUID.",
+  "IS_ENUM": "{property} has an invalid value.",
+  "MIN_LENGTH": "{property} must be at least {constraints.0} characters long.",
+  "MAX_LENGTH": "{property} must be at most {constraints.0} characters long.",
+  "MIN": "{property} must not be less than {constraints.0}.",
+  "MAX": "{property} must not be greater than {constraints.0}.",
+  "IS_STRONG_PASSWORD": "{property} is too weak.",
+  "IS_DATE_STRING": "{property} must be a valid date string.",
+  "IS_URL": "{property} must be a valid URL."
+}

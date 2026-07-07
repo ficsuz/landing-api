@@ -1,0 +1,21 @@
+{
+  "IS_NOT_EMPTY": "{property} bo‘sh bo‘lmasligi kerak.",
+  "IS_DEFINED": "{property} majburiy.",
+  "IS_EMAIL": "{property} haqiqiy email manzil bo‘lishi kerak.",
+  "IS_STRING": "{property} matn bo‘lishi kerak.",
+  "IS_INT": "{property} butun son bo‘lishi kerak.",
+  "IS_NUMBER": "{property} son bo‘lishi kerak.",
+  "IS_BOOLEAN": "{property} mantiqiy qiymat bo‘lishi kerak.",
+  "IS_ARRAY": "{property} massiv bo‘lishi kerak.",
+  "ARRAY_NOT_EMPTY": "{property} bo‘sh bo‘lmasligi kerak.",
+  "IS_OBJECT": "{property} obyekt bo‘lishi kerak.",
+  "IS_UUID": "{property} haqiqiy UUID bo‘lishi kerak.",
+  "IS_ENUM": "{property} yaroqsiz qiymatga ega.",
+  "MIN_LENGTH": "{property} kamida {constraints.0} ta belgidan iborat bo‘lishi kerak.",
+  "MAX_LENGTH": "{property} ko‘pi bilan {constraints.0} ta belgidan iborat bo‘lishi kerak.",
+  "MIN": "{property} {constraints.0} dan kichik bo‘lmasligi kerak.",
+  "MAX": "{property} {constraints.0} dan katta bo‘lmasligi kerak.",
+  "IS_STRONG_PASSWORD": "{property} juda zaif.",
+  "IS_DATE_STRING": "{property} haqiqiy sana bo‘lishi kerak.",
+  "IS_URL": "{property} haqiqiy URL bo‘lishi kerak."
+}

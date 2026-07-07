@@ -1,0 +1,66 @@
+version: '3.8'
+
+# Local dev / test MinIO stack.
+# Starts MinIO and seeds the bucket from ./storage/imports automatically.
+#
+# Usage:
+#   yarn minio:up      # start in background (mirrors storage/imports into the bucket once)
+#   yarn minio:logs    # follow seed + server logs
+#   yarn minio:down    # stop and remove containers
+#   yarn minio:reseed  # re-mirror storage/imports into the bucket (run after `yarn seed:content`)
+#
+# NOTE: minio-seed is one-shot — it mirrors storage/imports only at startup, then exits.
+# After regenerating fixtures with `yarn seed:content` (new file UUIDs), run `yarn minio:reseed`
+# so the new objects land in the bucket; otherwise reads 404 with "Object does not exist".
+#
+# MinIO Console: http://localhost:9001  (same creds as MINIO_ACCESS_KEY / MINIO_SECRET_KEY)
+# S3 API:        http://localhost:9000
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: nestjs-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    networks:
+      - minio-net
+
+  minio-seed:
+    image: minio/mc:latest
+    container_name: nestjs-minio-seed
+    restart: "no"
+    depends_on:
+      - minio
+    environment:
+      MC_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MC_PASS: ${MINIO_SECRET_KEY:-minioadmin}
+      MC_BUCKET: ${MINIO_BUCKET:-uploads}
+    volumes:
+      - ./storage/imports:/import-data:ro
+    entrypoint: >
+      sh -c "
+        echo 'Waiting for MinIO to be ready...' &&
+        until mc alias set local http://minio:9000 \"$$MC_USER\" \"$$MC_PASS\" > /dev/null 2>&1; do
+          sleep 2;
+        done &&
+        mc mb --ignore-existing local/\"$$MC_BUCKET\" &&
+        mc mirror --overwrite /import-data local/\"$$MC_BUCKET\" &&
+        echo 'Seed complete: storage/imports mirrored into bucket' \"$$MC_BUCKET\"
+      "
+    networks:
+      - minio-net
+
+networks:
+  minio-net:
+    driver: bridge
+
+volumes:
+  minio_data:

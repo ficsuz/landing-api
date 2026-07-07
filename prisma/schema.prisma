@@ -1,0 +1,645 @@
+// Prisma schema — https://pris.ly/d/prisma-schema
+//
+// Conventions used throughout this schema:
+//   * PKs are UUID v7 (`uuid(7)`) — time-sortable for better index locality.
+//   * Columns map to snake_case via `@map`; tables map via `@@map`.
+//   * `text` is the default string type (length is enforced in DTOs, not the DB).
+//   * `updatedAt` uses `@updatedAt` so it auto-updates on every write.
+//   * Domain entities (users, roles, permissions, files) carry soft-delete
+//     (`isDeleted`/`deletedAt`) + audit columns (`createdById`/`updatedById`/
+//     `deletedById`, stored as loose UUIDs — no FK, to avoid relation sprawl).
+//   * System/ephemeral tables (sessions, codes, jobs, steps, joins, history)
+//     are lean: no soft-delete, only the columns they need.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum StepStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────
+
+model Users {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  email               String    @unique
+  fullName            String    @map("full_name")
+  password            String? // bcrypt hash; null for OAuth-only accounts
+  isVerified          Boolean   @default(false) @map("is_verified")
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz
+  verificationAttempt Int       @default(0) @map("verification_attempt")
+  blockedAt           DateTime? @map("blocked_at") @db.Timestamptz
+
+  // OAuth
+  provider   String? // e.g. 'google'
+  providerId String? @map("provider_id")
+  authMethod String  @default("local") @map("auth_method") // 'local' | 'oauth'
+
+  // Soft delete + timestamps + audit
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  // Relations
+  userRoles       UserRoles[]
+  sessions        UserSessions[]
+  oneTimeCodes    OneTimeCodes[]
+  downloadHistory DownloadHistory[]
+  jobs            Jobs[]
+
+  @@unique([provider, providerId])
+  @@index([isDeleted])
+  @@map("users")
+}
+
+model Roles {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  name        String  @unique
+  description String?
+  isSystem    Boolean @default(false) @map("is_system") // built-in roles cannot be deleted
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  rolePermissions RolePermissions[]
+  userRoles       UserRoles[]
+
+  @@map("roles")
+}
+
+model Permissions {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  key         String  @unique // canonical identity, e.g. 'user:create'
+  resource    String // e.g. 'user'
+  action      String // e.g. 'create'
+  description String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  rolePermissions RolePermissions[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+// Lean join tables: composite PK, no soft-delete, just enough audit.
+
+model UserRoles {
+  userId      String   @map("user_id") @db.Uuid
+  roleId      String   @map("role_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdById String?  @map("created_by") @db.Uuid
+
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Roles @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermissions {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdById  String?  @map("created_by") @db.Uuid
+
+  role       Roles       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permissions @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sessions & credentials
+// ─────────────────────────────────────────────────────────────
+
+// One row per login session. Also holds the active refresh-token hash, so
+// there is a single source of truth for "is this session/token still valid".
+model UserSessions {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  sessionId        String    @unique @map("session_id") // the sid embedded in issued JWTs
+  refreshTokenHash String?   @map("refresh_token_hash") // sha256 of the current refresh token
+  isActive         Boolean   @default(true) @map("is_active")
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("user_sessions")
+}
+
+// One-time codes for email verification / password reset. The OTP is stored
+// hashed; `code` is a high-entropy lookup token handed to the client.
+model OneTimeCodes {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  email      String
+  code       String    @unique
+  otpHash    String    @map("otp_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+  attempts   Int       @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("one_time_codes")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Files
+// ─────────────────────────────────────────────────────────────
+
+model Files {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  name       String
+  type       String // MIME type
+  size       Int // bytes
+  bucketName String  @map("bucket_name")
+  path       String?
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  downloadHistory DownloadHistory[]
+
+  @@index([createdById])
+  @@map("files")
+}
+
+// Append-only download log. Nulls preserved when a user/file is removed.
+model DownloadHistory {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+  fileId    String? @map("file_id") @db.Uuid
+  ipAddress String? @map("ip_address")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user Users? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  file Files? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([fileId])
+  @@map("download_history")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Background jobs (generic BullMQ pipeline)
+//
+// A `Job` is one pipeline RUN: it owns an ordered set of `JobSteps` that
+// execute sequentially (GitHub-Actions style — each step, on success, enqueues
+// the next; a failed step halts the run). The job tracks the run as a whole
+// (overall status + which step is in flight); each step tracks its own
+// execution. This is the row clients poll/subscribe to.
+// ─────────────────────────────────────────────────────────────
+
+model Jobs {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  type        String // application-defined pipeline type
+  status      JobStatus @default(PENDING)
+  payload     Json // shared input handed to every step in the run
+  result      Json? // final result (the last step's output)
+  error       String? // failure reason when status = FAILED
+  totalSteps  Int       @map("total_steps")
+  currentStep Int       @default(0) @map("current_step") // 1-based index of the step in flight (0 = not started)
+  userId      String?   @map("user_id") @db.Uuid
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+
+  user  Users?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  steps JobSteps[]
+
+  @@index([status])
+  @@index([userId])
+  @@map("jobs")
+}
+
+model JobSteps {
+  id         String     @id @default(uuid(7)) @db.Uuid
+  jobId      String     @map("job_id") @db.Uuid
+  type       String // application-defined step type (resolves to a StepHandler)
+  status     StepStatus @default(PENDING)
+  stepNumber Int        @map("step_number") // 1-based position within the run
+  attempts   Int        @default(0) // BullMQ attempts made (incremented on each retry)
+  data       Json? // per-step input
+  result     Json? // handler output (forwarded to the next step)
+  error      String?
+
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+
+  job Jobs @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, stepNumber])
+  @@index([jobId, status])
+  @@map("job_steps")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Content (CMS) — public-facing content managed via the admin CRUD APIs.
+// Trilingual text is stored as a single JSON column shaped `{ en, ru, uz }`
+// (see TranslationDto). Images reference the `Files` table by id (loose UUID,
+// no FK — same convention as the audit columns, avoiding relation sprawl on
+// Files); clients fetch the binary via GET /files/:id. Seed sample data with
+// `yarn seed:content`. Domain entities → soft-delete + audit, like users/files.
+// ─────────────────────────────────────────────────────────────
+
+model Events {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  title          Json // { en, ru, uz }
+  content        Json? // { en, ru, uz } — rich HTML
+  previewImageId String?   @map("preview_image_id") @db.Uuid // -> Files.id
+  imageId        String?   @map("image_id") @db.Uuid // -> Files.id
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@map("events")
+}
+
+model News {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  title     Json // { en, ru, uz }
+  content   Json? // { en, ru, uz }
+  imageId   String?   @map("image_id") @db.Uuid // -> Files.id
+  date      DateTime? @db.Date
+  status    Int       @default(1) // 0 = draft, 1 = published
+  otherLink String?   @map("other_link") // external URL (e.g. LinkedIn post)
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("news")
+}
+
+model Council {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  fullName Json    @map("full_name") // { en, ru, uz }
+  position Json // { en, ru, uz }
+  photoId  String? @map("photo_id") @db.Uuid // -> Files.id
+  order    Int     @default(0) // display order (ascending)
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@map("council_members")
+}
+
+model Testimonials {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  fullName    String? @map("full_name") // author name (plain text)
+  position    String? // author position (plain text)
+  captionId   String? @map("caption_id") @db.Uuid // -> Files.id
+  logoId      String? @map("logo_id") @db.Uuid // -> Files.id
+  videoSource String? @map("video_source") // YouTube/short URL
+  order       Int     @default(0) // display order (ascending)
+  status      Boolean @default(true) // published flag
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("testimonials")
+}
+
+model Blogs {
+  id      String    @id @default(uuid(7)) @db.Uuid
+  title   Json // { en, ru, uz }
+  content Json? // { en, ru, uz } — rich HTML
+  subject Json? // { en, ru, uz } — subject/topic name
+  imageId String?   @map("image_id") @db.Uuid // -> Files.id
+  date    DateTime? @db.Date
+  status  Int       @default(1) // 0 = draft, 1 = published
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("blogs")
+}
+
+// Distinguishes the two upstream expert feeds folded into one table:
+// INTERNATIONAL = `/experts` (advisory group), UZBEK = `/uzbek-experts`.
+enum ExpertType {
+  INTERNATIONAL
+  UZBEK
+}
+
+model Experts {
+  id       String     @id @default(uuid(7)) @db.Uuid
+  type     ExpertType @default(INTERNATIONAL)
+  fullName Json       @map("full_name") // { en, ru, uz }
+  position Json // { en, ru, uz }
+  bio      Json? // { en, ru, uz } — biography / "about"
+  imageId  String?    @map("image_id") @db.Uuid // -> Files.id
+  email    String? // INTERNATIONAL only
+  phone    String? // INTERNATIONAL only
+  order    Int        @default(0) // display order (ascending)
+  status   Boolean    @default(true) // published flag (UZBEK feed)
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([type])
+  @@index([status])
+  @@map("experts")
+}
+
+// Secretariat / "Our Team" members shown on the site's team section. Each row is
+// a person with a trilingual name + position, an optional biography, a portrait
+// (`photoId` -> Files.id, rendered via GET /files/:id) and public contact
+// details. Same soft-delete + audit convention as the other content entities.
+model TeamMembers {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  fullName Json    @map("full_name") // { en, ru, uz }
+  position Json // { en, ru, uz }
+  bio      Json? // { en, ru, uz } — biography / "about"
+  photoId  String? @map("photo_id") @db.Uuid // -> Files.id
+  email    String?
+  phone    String?
+  order    Int     @default(0) // display order (ascending)
+  status   Boolean @default(true) // published flag
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("team_members")
+}
+
+enum MemberType {
+  EXECUTIVE_BOARD
+  FULL
+  OBSERVER
+}
+
+// Foreign Investors Council member companies shown on the "Council Members" page.
+// Each row is an organization with a trilingual name + description, a logo
+// (`logoId` -> Files.id, rendered via GET /files/:id), an external website
+// `link`, and a membership category (`type`: executive board / full / observer;
+// the page groups + counts members by it). Same soft-delete + audit convention
+// as the other content entities.
+model Members {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  name        Json // { en, ru, uz } — company name
+  description Json? // { en, ru, uz } — company description
+  logoId      String?    @map("logo_id") @db.Uuid // -> Files.id
+  link        String? // external website URL
+  type        MemberType @default(FULL) // membership category
+  order       Int        @default(0) // display order (ascending)
+  status      Boolean    @default(true) // published flag
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([type])
+  @@index([status])
+  @@map("members")
+}
+
+// Downloadable analytical reports. Each row pairs a cover image (`previewImageId`)
+// shown on the card with a downloadable document (`fileId`); both reference the
+// `Files` table by id (loose UUID, no FK — same convention as the other content
+// entities). Clients render the cover via GET /files/:id and trigger the
+// "Download" button via GET /files/:id?download=true.
+model Reports {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  title          Json // { en, ru, uz }
+  description    Json? // { en, ru, uz } — short summary
+  previewImageId String?   @map("preview_image_id") @db.Uuid // -> Files.id (cover)
+  fileId         String?   @map("file_id") @db.Uuid // -> Files.id (downloadable document)
+  date           DateTime? @db.Date
+  status         Int       @default(1) // 0 = draft, 1 = published
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("reports")
+}
+
+// The Council's official document categories — the filter tabs on the public
+// Documents page. Admin-managed (full CRUD) so new tabs can appear without a
+// code change; the client renders the tabs dynamically from the API. `slug` is
+// a stable machine key for client-side routing/deep-links. A domain entity, so
+// it carries soft-delete + audit like users/roles.
+model DocumentCategories {
+  id     String  @id @default(uuid(7)) @db.Uuid
+  name   Json // { en, ru, uz } — tab label
+  slug   String  @unique // stable machine key, e.g. 'annual-reports'
+  order  Int     @default(0) // tab display order (ascending)
+  status Boolean @default(true) // published flag (show the tab)
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  documents Documents[]
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("document_categories")
+}
+
+// Official Council documents (annual reports, meeting minutes, decrees, founding
+// materials), grouped by `category` (a DocumentCategories row, referenced via a
+// real FK). Each row is a downloadable document with no cover image — `fileId`
+// references the `Files` table by id (loose UUID, no FK, like the other content
+// entities). The "Download" button hits GET /files/:id?download=true.
+model Documents {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  categoryId String    @map("category_id") @db.Uuid // -> DocumentCategories.id
+  title      Json // { en, ru, uz }
+  fileId     String?   @map("file_id") @db.Uuid // -> Files.id (downloadable document)
+  date       DateTime? @db.Date
+  order      Int       @default(0) // display order (ascending) within a category
+  status     Boolean   @default(true) // published flag
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  // Restrict: a category in use cannot be hard-deleted (the service also blocks
+  // soft-deleting an in-use category with a domain error).
+  category DocumentCategories @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([isDeleted])
+  @@index([categoryId])
+  @@index([status])
+  @@map("documents")
+}
+
+// The Council's chronology — the "Key milestones" timeline on the public site.
+// Each row is one milestone: `title` is the period label shown on the tab/card
+// (e.g. "May 2024"), `description` is the milestone body. `date` sorts the
+// timeline chronologically; `order` lets an admin pin an explicit position (the
+// numbered cards). A domain entity, so it carries soft-delete + audit.
+model Chronology {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  title       Json // { en, ru, uz } — period label, e.g. "May 2024"
+  description Json? // { en, ru, uz } — milestone body/summary
+  date        DateTime? @db.Date // milestone date (sorts the timeline)
+  order       Int       @default(0) // display order (ascending)
+  status      Int       @default(1) // 0 = draft, 1 = published
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("chronology")
+}
+
+// The "Council Calendar" carousel on the public site — a separate feature from
+// the `Chronology` milestone timeline above. Each row is one calendar card: the
+// big year and the month label are both rendered from `date`; `title` is the
+// session name (e.g. "I Plenary Session held") and `description` is the body the
+// "Learn more" button opens. `order` pins the card position; a domain entity, so
+// it carries soft-delete + audit.
+model CouncilCalendar {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  title       Json // { en, ru, uz } — session title, e.g. "I Plenary Session held"
+  description Json? // { en, ru, uz } — the "Learn more" detail body
+  date        DateTime? @db.Date // session date; the card renders its year + month from this
+  order       Int       @default(0) // display order (ascending)
+  status      Int       @default(1) // 0 = draft, 1 = published
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("council_calendar")
+}
