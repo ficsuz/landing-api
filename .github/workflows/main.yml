@@ -1,1 +1,54 @@
 
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  docker_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push to Prod
+        if: github.ref_name == 'main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest
+
+  deploy:
+    name: deploy to prod
+    needs: docker_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Node.js app to Prod
+        if: github.ref_name == 'main'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest
+            docker service update --force --with-registry-auth --detach=false --image ${{ secrets.DOCKER_USERNAME }}/${{ github.event.repository.name }}:latest landing_api_prod
+            docker container prune -f
