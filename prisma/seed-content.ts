@@ -3,21 +3,21 @@ import { PrismaClient, Prisma, ExpertType } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import axios from 'axios';
-import { promises as fs } from 'fs';
-import { basename, dirname, extname, join, resolve } from 'path';
+import { Client as MinioClient } from 'minio';
+import { basename, extname } from 'path';
 
 /**
  * Content seeder — dumps the upstream FIC CMS data into the local database.
  *
  * For each resource it pulls the upstream rows (Laravel paginator vs plain
  * array), and for every referenced image it: downloads the bytes, creates a
- * `Files` row (so the image becomes a first-class file with a UUID id), saves
- * the bytes locally as `<fileId><ext>` — the exact object key the Files module
- * serves from MinIO (`GET /files/:id`) — and links the content row to that file
- * by id. Upload the local folder to MinIO by hand and the keys line up.
+ * `Files` row (so the image becomes a first-class file with a UUID id),
+ * uploads the bytes to MinIO as `<fileId><ext>` — the exact object key the
+ * Files module serves from MinIO (`GET /files/:id`) — and links the content
+ * row to that file by id.
  *
- * Re-runnable: each resource is reset (its rows + the files they reference are
- * deleted, local copies included) before a fresh load — no upstream id is kept.
+ * Re-runnable: each resource is reset (its rows + the files they reference,
+ * including their MinIO objects) before a fresh load — no upstream id is kept.
  *
  *   yarn seed:content                      # all resources
  *   yarn seed:content events news          # only the named resources
@@ -27,7 +27,6 @@ const BASE_URL = (process.env.IMPORT_SOURCE_BASE_URL ?? 'https://fic.uniplatform
   /\/+$/,
   '',
 );
-const IMPORT_DIR = resolve(process.env.LOCAL_IMPORT_DIR ?? './storage/imports');
 const BUCKET = process.env.MINIO_BUCKET ?? 'uploads';
 const PER_PAGE = 50;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -40,6 +39,16 @@ if (!connectionString) {
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter, log: ['error', 'warn'], errorFormat: 'minimal' });
+
+// Same client construction as `MinioClientModule` (src/common/services/minio),
+// instantiated directly since this script runs outside Nest's DI container.
+const minioClient = new MinioClient({
+  endPoint: process.env.MINIO_ENDPOINT ?? 'localhost',
+  port: Number(process.env.MINIO_PORT ?? 9000),
+  useSSL: process.env.MINIO_USE_SSL === 'true',
+  accessKey: process.env.MINIO_ACCESS_KEY ?? 'minioadmin',
+  secretKey: process.env.MINIO_SECRET_KEY ?? 'minioadmin',
+});
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -100,9 +109,10 @@ async function fetchAllPages<T>(resource: string): Promise<T[]> {
 }
 
 /**
- * Download one upstream image into the local Files system: create a Files row,
- * save the bytes as `<fileId><ext>`, and return the new file id (or null when
- * there is no image / the download fails — a failure never aborts the run).
+ * Download one upstream image and upload it into MinIO: create a Files row,
+ * put the bytes at `<fileId><ext>` (mirrors `FilesService.upload`), and return
+ * the new file id (or null when there is no image / the import fails — a
+ * failure never aborts the run).
  */
 async function storeFile(
   key: string | null | undefined,
@@ -136,21 +146,28 @@ async function storeFile(
     });
     const objectKey = `${file.id}${ext}`;
 
-    const localPath = join(IMPORT_DIR, objectKey);
-    await fs.mkdir(dirname(localPath), { recursive: true });
-    await fs.writeFile(localPath, buffer);
+    try {
+      await minioClient.putObject(BUCKET, objectKey, buffer, buffer.length, {
+        'Content-Type': type,
+      });
+    } catch (uploadError) {
+      // Roll back the orphaned row if the object store write fails.
+      await prisma.files.delete({ where: { id: file.id } });
+      throw uploadError;
+    }
+
     await prisma.files.update({ where: { id: file.id }, data: { path: objectKey } });
 
     stats.files += 1;
     return file.id;
   } catch (error) {
     stats.filesFailed += 1;
-    console.warn(`   ⚠ file download failed (${safeKey}): ${errMessage(error)}`);
+    console.warn(`   ⚠ file import failed (${safeKey}): ${errMessage(error)}`);
     return null;
   }
 }
 
-/** Delete the given Files rows and their local copies (used when resetting a resource). */
+/** Delete the given Files rows and their MinIO objects (used when resetting a resource). */
 async function deleteFiles(ids: (string | null)[]): Promise<void> {
   const fileIds = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (fileIds.length === 0) return;
@@ -159,7 +176,7 @@ async function deleteFiles(ids: (string | null)[]): Promise<void> {
     select: { path: true },
   });
   for (const f of files) {
-    if (f.path) await fs.rm(join(IMPORT_DIR, f.path), { force: true }).catch(() => undefined);
+    if (f.path) await minioClient.removeObject(BUCKET, f.path).catch(() => undefined);
   }
   await prisma.files.deleteMany({ where: { id: { in: fileIds } } });
 }
@@ -688,8 +705,13 @@ async function main(): Promise<void> {
   });
   const actorId = admin?.id ?? null;
 
+  if (!(await minioClient.bucketExists(BUCKET))) {
+    await minioClient.makeBucket(BUCKET);
+    console.log(`🪣 Bucket "${BUCKET}" created.`);
+  }
+
   console.log(`📥 Importing from ${BASE_URL}`);
-  console.log(`🗂  Files: bucket "${BUCKET}", local copies in ${IMPORT_DIR} (named <fileId><ext>)`);
+  console.log(`🗂  Files: uploading to MinIO bucket "${BUCKET}" (named <fileId><ext>)`);
   console.log(
     `👤 Audit actor: ${actorId ? `${adminEmail} (${actorId})` : 'none (createdBy = null)'}\n`,
   );

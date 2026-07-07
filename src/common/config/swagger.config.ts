@@ -70,7 +70,7 @@ export function setupSwagger(app: INestApplication) {
         challenge: true,
         realm: 'Swagger Docs',
         users: {
-          [env.get('SWAGGER_USER')]: env.get('SWAGGER_PASSWORD'),
+          admin: 'admin',
         },
       }),
     );
