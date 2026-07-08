@@ -4,7 +4,6 @@ import { EnvService } from '@common/services/env/env.service';
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as basicAuth from 'express-basic-auth';
-import { defaultCustomJsStr } from './swagger-js';
 import { injectGlobalSecurityScheme, injectStandardErrorResponses } from './swagger-responses';
 
 export function setupSwagger(app: INestApplication) {
@@ -91,7 +90,7 @@ export function setupSwagger(app: INestApplication) {
 
   const customOptions = {
     customSiteTitle: 'Pattern API - Interactive Documentation',
-    customJsStr: defaultCustomJsStr,
+    // customJsStr: defaultCustomJsStr,
     // Keep the chosen language (and bearer token) across page reloads.
     swaggerOptions: { persistAuthorization: true },
   };
