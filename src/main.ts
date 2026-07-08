@@ -159,11 +159,31 @@ async function bootstrap() {
   // APP_FILTER in AppModule so it can inject I18nService + LoggerService).
   app.useGlobalInterceptors(new TransformInterceptor());
 
-  // Enable CORS
+  // Enable CORS. `credentials: true` combined with a literal `Access-Control-
+  // Allow-Origin: *` is illegal per the CORS spec and makes the browser block
+  // every credentialed request — so instead of ever emitting `*`, reflect the
+  // caller's Origin. CORS_ORIGIN='*' reflects any origin; a comma-separated list
+  // (e.g. 'https://fics.uz,http://80.241.214.247:8005') restricts to those.
+  const corsOrigin = env.get('CORS_ORIGIN');
+  const corsAllowlist =
+    corsOrigin === '*'
+      ? null
+      : corsOrigin
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean);
   app.enableCors({
-    origin: env.get('CORS_ORIGIN'),
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: (requestOrigin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Non-CORS requests (no Origin header) and, when unrestricted, any origin
+      // are reflected back; otherwise only allowlisted origins are echoed.
+      if (!requestOrigin || !corsAllowlist || corsAllowlist.includes(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language', 'x-lang'],
     credentials: true,
   });
 

@@ -78,6 +78,12 @@ USER nestjs
 # Expose port
 EXPOSE 5001
 
+# Liveness/readiness: /health exercises the DB path (SELECT 1) and reports
+# "database":"up"/"down". A wedged pool makes it hang (killed by --timeout); a
+# DB-down instance reports "down" (grep fails). Mirrors the Swarm healthcheck so
+# plain `docker run` images get the same detection. wget is installed in this stage.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:5001/health | grep -q '"database":"up"' || exit 1
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

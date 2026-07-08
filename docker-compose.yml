@@ -7,6 +7,18 @@ services:
       - "5001:5001"
     env_file:
       - .env.prod
+    # /health runs `SELECT 1` and reports "database":"up"/"down". Grepping the body
+    # makes BOTH failure modes unhealthy: a wedged DB/pool path hangs the request
+    # (killed by the 5s timeout), and a reachable-but-DB-down instance reports
+    # "down" (grep fails). This keeps restart_policy (which only fires on process
+    # EXIT) from missing a wedge, and stops a start-first rollout from swapping a
+    # healthy replica for a DB-unreachable new one. wget+grep ship in the image.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5001/health | grep -q '\"database\":\"up\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     deploy:
       replicas: 1
       restart_policy:
@@ -17,6 +29,15 @@ services:
       update_config:
         parallelism: 1
         delay: 10s
+        # Start the new task and wait for it to be healthy before stopping the old
+        # one — avoids a redeploy window with no serving replica.
+        order: start-first
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
     networks:
       - landing_api
 
