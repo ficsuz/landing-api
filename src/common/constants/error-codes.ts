@@ -86,6 +86,7 @@ export const ErrorCodes = {
   COUNCIL_CALENDAR_NOT_FOUND: 'COUNCIL_CALENDAR_NOT_FOUND',
   TEAM_MEMBER_NOT_FOUND: 'TEAM_MEMBER_NOT_FOUND',
   MEMBER_NOT_FOUND: 'MEMBER_NOT_FOUND',
+  MEETING_NOT_FOUND: 'MEETING_NOT_FOUND',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

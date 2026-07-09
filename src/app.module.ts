@@ -26,6 +26,7 @@ import { ChronologyModule } from '@modules/chronology/chronology.module';
 import { CouncilCalendarModule } from '@modules/council-calendar/council-calendar.module';
 import { TeamModule } from '@modules/team/team.module';
 import { MembersModule } from '@modules/members/members.module';
+import { MeetingsModule } from '@modules/meetings/meetings.module';
 import { GoogleStrategy } from '@modules/auth/strategies/google.strategy';
 import { GatewayModule } from '@common/services/socket-gateway/gateway.module';
 import { EnvModule } from './common/services/env/env.module';
@@ -88,6 +89,7 @@ import { AppService } from './app.service';
     CouncilCalendarModule,
     TeamModule,
     MembersModule,
+    MeetingsModule,
     EnvModule,
   ],
   providers: [

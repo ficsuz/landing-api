@@ -32,6 +32,7 @@ export const RESOURCES = {
   COUNCIL_CALENDAR: 'council-calendar',
   TEAM: 'team',
   MEMBERS: 'members',
+  MEETINGS: 'meetings',
 } as const;
 
 // ── RBAC permission catalog ───────────────────────────────────
@@ -58,6 +59,7 @@ export const PERMISSION_RESOURCES = {
   COUNCIL_CALENDAR: 'council-calendar',
   TEAM: 'team',
   MEMBER: 'member',
+  MEETING: 'meeting',
 } as const;
 
 export const PERMISSION_ACTIONS = {

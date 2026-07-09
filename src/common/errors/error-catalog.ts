@@ -83,6 +83,7 @@ export const ERROR_STATUS: Record<ErrorCode, HttpStatus> = {
   [ErrorCodes.COUNCIL_CALENDAR_NOT_FOUND]: HttpStatus.NOT_FOUND,
   [ErrorCodes.TEAM_MEMBER_NOT_FOUND]: HttpStatus.NOT_FOUND,
   [ErrorCodes.MEMBER_NOT_FOUND]: HttpStatus.NOT_FOUND,
+  [ErrorCodes.MEETING_NOT_FOUND]: HttpStatus.NOT_FOUND,
 };
 
 /** i18n message key for a code: `errors.<CODE>`. */

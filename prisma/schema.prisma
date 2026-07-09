@@ -643,3 +643,29 @@ model CouncilCalendar {
   @@index([status])
   @@map("council_calendar")
 }
+
+// The Council's meetings/sessions listing — modeled exactly like `Blogs`: a
+// trilingual title + rich content, an optional subject/topic label, a cover
+// image (`imageId` -> Files.id, rendered via GET /files/:id) and a date. A
+// domain entity, so it carries soft-delete + audit like the other content.
+model Meetings {
+  id      String    @id @default(uuid(7)) @db.Uuid
+  title   Json // { en, ru, uz }
+  content Json? // { en, ru, uz } — rich HTML
+  subject Json? // { en, ru, uz } — subject/topic name
+  imageId String?   @map("image_id") @db.Uuid // -> Files.id
+  date    DateTime? @db.Date
+  status  Int       @default(1) // 0 = draft, 1 = published
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("meetings")
+}

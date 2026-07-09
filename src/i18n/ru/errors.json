@@ -53,5 +53,6 @@
   "CHRONOLOGY_NOT_FOUND": "Веха хронологии не найдена.",
   "COUNCIL_CALENDAR_NOT_FOUND": "Запись календаря совета не найдена.",
   "TEAM_MEMBER_NOT_FOUND": "Член команды не найден.",
-  "MEMBER_NOT_FOUND": "Член совета не найден."
+  "MEMBER_NOT_FOUND": "Член совета не найден.",
+  "MEETING_NOT_FOUND": "Заседание не найдено."
 }
