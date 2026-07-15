@@ -85,7 +85,7 @@ export class FilesService {
   async getFile(
     fileId: string,
     query: GetFileQueryDto,
-    user: IUserSession,
+    user?: IUserSession,
     ip?: string,
   ): Promise<StreamableFile> {
     const file = await this.prisma.files.findUnique({
@@ -110,9 +110,10 @@ export class FilesService {
 
     const download = query.download ?? false;
 
-    // Record genuine downloads (not inline views) in the access log.
+    // Record genuine downloads (not inline views) in the access log. The route
+    // is public — anonymous downloads log with a null user.
     if (download) {
-      this.recordDownload(file.id, user.id, ip);
+      this.recordDownload(file.id, user?.id, ip);
     }
 
     const disposition =
@@ -128,7 +129,7 @@ export class FilesService {
   }
 
   /** Best-effort append to the download log — never blocks or fails the stream. */
-  private recordDownload(fileId: string, userId: string, ipAddress?: string): void {
+  private recordDownload(fileId: string, userId?: string, ipAddress?: string): void {
     void this.prisma.downloadHistory
       .create({ data: { fileId, userId, ipAddress } })
       .catch((error) =>

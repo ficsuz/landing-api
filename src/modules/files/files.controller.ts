@@ -112,7 +112,7 @@ export class FilesController {
   getFile(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: GetFileQueryDto,
-    @User() user: IUserSession,
+    @User() user: IUserSession | undefined,
     @Ip() ip: string,
   ) {
     return this.filesService.getFile(id, query, user, ip);

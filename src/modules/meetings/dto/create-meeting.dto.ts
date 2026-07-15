@@ -43,7 +43,8 @@ export class CreateMeetingDto {
     example: ['018f1a2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b'],
     description:
       'Gallery image file ids (each references Files.id; fetch via GET /files/:id, ' +
-      'download via GET /files/:id?download=true). Replaces the whole gallery when provided.',
+      'download via GET /files/:id?download=true). Replaces the whole gallery when ' +
+      'provided; null or [] clears it.',
   })
   @IsArray({ message: i18nValidationMessage('validation.IS_ARRAY') })
   @IsUUID('all', { each: true, message: i18nValidationMessage('validation.IS_UUID') })

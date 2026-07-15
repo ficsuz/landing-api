@@ -81,7 +81,9 @@ export class MeetingsService {
         content: dto.content ? { ...dto.content } : Prisma.DbNull,
         subject: dto.subject ? { ...dto.subject } : Prisma.DbNull,
         imageId: dto.imageId,
-        imageIds: dto.imageIds,
+        // The column is a non-nullable list — coerce a JSON null (which
+        // @IsOptional lets through) to the empty gallery instead of a 500.
+        imageIds: dto.imageIds ?? [],
         date: dto.date ? new Date(dto.date) : null,
         status: dto.status,
         createdById: user.id,
@@ -112,7 +114,9 @@ export class MeetingsService {
           ? { subject: dto.subject ? { ...dto.subject } : Prisma.DbNull }
           : {}),
         imageId: dto.imageId,
-        imageIds: dto.imageIds,
+        // undefined = leave the gallery untouched; null (or []) = clear it —
+        // mirroring how `imageId: null` clears the cover on this endpoint.
+        ...(dto.imageIds !== undefined ? { imageIds: dto.imageIds ?? [] } : {}),
         date: dto.date ? new Date(dto.date) : undefined,
         status: dto.status,
         updatedById: user.id,
