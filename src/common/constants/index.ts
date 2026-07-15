@@ -33,6 +33,7 @@ export const RESOURCES = {
   TEAM: 'team',
   MEMBERS: 'members',
   MEETINGS: 'meetings',
+  SPECIAL_PROJECTS: 'special-projects',
 } as const;
 
 // ── RBAC permission catalog ───────────────────────────────────
@@ -60,6 +61,7 @@ export const PERMISSION_RESOURCES = {
   TEAM: 'team',
   MEMBER: 'member',
   MEETING: 'meeting',
+  SPECIAL_PROJECT: 'special-project',
 } as const;
 
 export const PERMISSION_ACTIONS = {

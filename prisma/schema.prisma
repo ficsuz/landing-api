@@ -644,6 +644,32 @@ model CouncilCalendar {
   @@map("council_calendar")
 }
 
+// The "Special Projects" section on the public site — feature stories and video
+// projects produced by the Council about the investment climate in Uzbekistan.
+// Each row is one project card: a trilingual `title` plus the external `link`
+// the card opens (e.g. a YouTube video). `order` pins the card position
+// (ascending; the first card renders as the featured project). A domain entity,
+// so it carries soft-delete + audit like the other content entities.
+model SpecialProjects {
+  id     String  @id @default(uuid(7)) @db.Uuid
+  title  Json // { en, ru, uz }
+  link   String? // external URL (e.g. YouTube video)
+  order  Int     @default(0) // display order (ascending)
+  status Boolean @default(true) // published flag
+
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  createdById String?   @map("created_by") @db.Uuid
+  updatedById String?   @map("updated_by") @db.Uuid
+  deletedById String?   @map("deleted_by") @db.Uuid
+
+  @@index([isDeleted])
+  @@index([status])
+  @@map("special_projects")
+}
+
 // The Council's meetings/sessions listing — modeled exactly like `Blogs`: a
 // trilingual title + rich content, an optional subject/topic label, a cover
 // image (`imageId` -> Files.id, rendered via GET /files/:id) and a date. A

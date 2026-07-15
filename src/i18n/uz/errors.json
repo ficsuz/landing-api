@@ -54,5 +54,6 @@
   "COUNCIL_CALENDAR_NOT_FOUND": "Kengash kalendari yozuvi topilmadi.",
   "TEAM_MEMBER_NOT_FOUND": "Jamoa a’zosi topilmadi.",
   "MEMBER_NOT_FOUND": "Kengash a’zosi topilmadi.",
-  "MEETING_NOT_FOUND": "Yig‘ilish topilmadi."
+  "MEETING_NOT_FOUND": "Yig‘ilish topilmadi.",
+  "SPECIAL_PROJECT_NOT_FOUND": "Maxsus loyiha topilmadi."
 }

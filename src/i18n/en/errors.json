@@ -54,5 +54,6 @@
   "COUNCIL_CALENDAR_NOT_FOUND": "Council calendar entry not found.",
   "TEAM_MEMBER_NOT_FOUND": "Team member not found.",
   "MEMBER_NOT_FOUND": "Council member not found.",
-  "MEETING_NOT_FOUND": "Meeting not found."
+  "MEETING_NOT_FOUND": "Meeting not found.",
+  "SPECIAL_PROJECT_NOT_FOUND": "Special project not found."
 }
