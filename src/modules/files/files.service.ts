@@ -64,6 +64,19 @@ export class FilesService {
   }
 
   /**
+   * Upload several files in one request. Each file goes through the same
+   * single-upload path (size check + DB row + object-store write); results are
+   * returned in the original field order.
+   */
+  uploadMany(files: BufferedFile[], user: IUserSession): Promise<FileResponseDto[]> {
+    if (!files?.length) {
+      throw new AppException(ErrorCodes.BAD_REQUEST, { details: { field: 'files' } });
+    }
+
+    return Promise.all(files.map((file) => this.upload(file, user)));
+  }
+
+  /**
    * Stream a stored file. `query.download === true` delivers it as an attachment
    * (and logs the download); otherwise it is served inline so browsers can
    * render it. Returns a `StreamableFile` so the controller stays a thin

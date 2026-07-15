@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsUUID, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { i18nValidationMessage } from 'nestjs-i18n';
 import { TranslationDto } from '@common/dto/translation.dto';
 
@@ -24,11 +32,23 @@ export class CreateMeetingDto {
 
   @ApiPropertyOptional({
     example: '018f1a2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b',
-    description: 'Image file id (references Files.id; fetch via GET /files/:id)',
+    description: 'Cover image file id (references Files.id; fetch via GET /files/:id)',
   })
   @IsUUID('all', { message: i18nValidationMessage('validation.IS_UUID') })
   @IsOptional()
   imageId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['018f1a2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b'],
+    description:
+      'Gallery image file ids (each references Files.id; fetch via GET /files/:id, ' +
+      'download via GET /files/:id?download=true). Replaces the whole gallery when provided.',
+  })
+  @IsArray({ message: i18nValidationMessage('validation.IS_ARRAY') })
+  @IsUUID('all', { each: true, message: i18nValidationMessage('validation.IS_UUID') })
+  @IsOptional()
+  imageIds?: string[];
 
   @ApiPropertyOptional({ example: '2026-01-05T00:00:00.000Z', description: 'Meeting date' })
   @IsDateString({}, { message: i18nValidationMessage('validation.IS_DATE_STRING') })

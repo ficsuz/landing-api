@@ -24,10 +24,19 @@ export class MeetingResponseDto {
 
   @ApiProperty({
     example: '018f1a2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b',
-    description: 'Image file id (fetch via GET /files/:id)',
+    description: 'Cover image file id (fetch via GET /files/:id)',
     nullable: true,
   })
   imageId: string | null;
+
+  @ApiProperty({
+    type: [String],
+    example: ['018f1a2b-3c4d-7e5f-8a9b-0c1d2e3f4a5b'],
+    description:
+      'Gallery image file ids (each fetchable via GET /files/:id, downloadable via ' +
+      'GET /files/:id?download=true)',
+  })
+  imageIds: string[];
 
   @ApiProperty({
     example: '2026-01-05T00:00:00.000Z',

@@ -672,16 +672,19 @@ model SpecialProjects {
 
 // The Council's meetings/sessions listing — modeled exactly like `Blogs`: a
 // trilingual title + rich content, an optional subject/topic label, a cover
-// image (`imageId` -> Files.id, rendered via GET /files/:id) and a date. A
-// domain entity, so it carries soft-delete + audit like the other content.
+// image (`imageId` -> Files.id, rendered via GET /files/:id) and a date, plus a
+// gallery of extra images (`imageIds`, loose UUIDs -> Files.id) shown on the
+// meeting page and downloadable via GET /files/:id?download=true. A domain
+// entity, so it carries soft-delete + audit like the other content.
 model Meetings {
-  id      String    @id @default(uuid(7)) @db.Uuid
-  title   Json // { en, ru, uz }
-  content Json? // { en, ru, uz } — rich HTML
-  subject Json? // { en, ru, uz } — subject/topic name
-  imageId String?   @map("image_id") @db.Uuid // -> Files.id
-  date    DateTime? @db.Date
-  status  Int       @default(1) // 0 = draft, 1 = published
+  id       String    @id @default(uuid(7)) @db.Uuid
+  title    Json // { en, ru, uz }
+  content  Json? // { en, ru, uz } — rich HTML
+  subject  Json? // { en, ru, uz } — subject/topic name
+  imageId  String?   @map("image_id") @db.Uuid // -> Files.id (cover)
+  imageIds String[]  @default([]) @map("image_ids") @db.Uuid // -> Files.id (gallery)
+  date     DateTime? @db.Date
+  status   Int       @default(1) // 0 = draft, 1 = published
 
   isDeleted   Boolean   @default(false) @map("is_deleted")
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz

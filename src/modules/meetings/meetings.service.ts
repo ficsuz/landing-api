@@ -16,6 +16,7 @@ const MEETING_SELECT = {
   content: true,
   subject: true,
   imageId: true,
+  imageIds: true,
   date: true,
   status: true,
   createdAt: true,
@@ -80,6 +81,7 @@ export class MeetingsService {
         content: dto.content ? { ...dto.content } : Prisma.DbNull,
         subject: dto.subject ? { ...dto.subject } : Prisma.DbNull,
         imageId: dto.imageId,
+        imageIds: dto.imageIds,
         date: dto.date ? new Date(dto.date) : null,
         status: dto.status,
         createdById: user.id,
@@ -110,6 +112,7 @@ export class MeetingsService {
           ? { subject: dto.subject ? { ...dto.subject } : Prisma.DbNull }
           : {}),
         imageId: dto.imageId,
+        imageIds: dto.imageIds,
         date: dto.date ? new Date(dto.date) : undefined,
         status: dto.status,
         updatedById: user.id,
