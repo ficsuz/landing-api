@@ -408,11 +408,13 @@ model Blogs {
   @@map("blogs")
 }
 
-// Distinguishes the two upstream expert feeds folded into one table:
-// INTERNATIONAL = `/experts` (advisory group), UZBEK = `/uzbek-experts`.
+// Distinguishes the upstream expert feeds folded into one table:
+// INTERNATIONAL = `/experts` (advisory group), UZBEK = `/uzbek-experts`,
+// LOCAL = local experts.
 enum ExpertType {
   INTERNATIONAL
   UZBEK
+  LOCAL
 }
 
 model Experts {

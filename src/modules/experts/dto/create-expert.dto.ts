@@ -20,7 +20,7 @@ export class CreateExpertDto {
   @ApiPropertyOptional({
     enum: ExpertType,
     default: ExpertType.INTERNATIONAL,
-    description: 'Expert feed: INTERNATIONAL (advisory group) or UZBEK',
+    description: 'Expert feed: INTERNATIONAL (advisory group), UZBEK, or LOCAL',
   })
   @IsEnum(ExpertType, { message: i18nValidationMessage('validation.IS_ENUM') })
   @IsOptional()

@@ -9,7 +9,7 @@ export class ExpertResponseDto {
   @ApiProperty({
     enum: ExpertType,
     example: ExpertType.INTERNATIONAL,
-    description: 'Expert feed (INTERNATIONAL or UZBEK)',
+    description: 'Expert feed (INTERNATIONAL, UZBEK, or LOCAL)',
   })
   type: ExpertType;
 

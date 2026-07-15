@@ -44,7 +44,7 @@ export class ExpertsController {
     summary: 'List experts',
     description:
       'Retrieve a paginated list of experts with optional search, sorting, and feed filter ' +
-      '(?type=INTERNATIONAL|UZBEK).',
+      '(?type=INTERNATIONAL|UZBEK|LOCAL).',
   })
   @ApiPaginatedResponse(ExpertResponseDto)
   findAll(@Query() query: ExpertQueryDto) {

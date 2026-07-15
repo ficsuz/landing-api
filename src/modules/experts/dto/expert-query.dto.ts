@@ -7,7 +7,7 @@ import { PaginationDto } from '@common/dto/pagination.dto';
 export class ExpertQueryDto extends PaginationDto {
   @ApiPropertyOptional({
     enum: ExpertType,
-    description: 'Filter by feed: INTERNATIONAL (advisory group) or UZBEK',
+    description: 'Filter by feed: INTERNATIONAL (advisory group), UZBEK, or LOCAL',
   })
   @IsEnum(ExpertType, { message: i18nValidationMessage('validation.IS_ENUM') })
   @IsOptional()
