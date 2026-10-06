@@ -1,6 +1,7 @@
 import { Injectable, Logger, StreamableFile } from '@nestjs/common';
 import { extname } from 'path';
 import { Readable } from 'stream';
+import * as sharp from 'sharp';
 import { Files } from '@prisma/client';
 
 import { BufferedFile } from './interfaces/file.interface';
@@ -15,6 +16,11 @@ import { ErrorCodes } from '@common/constants/error-codes';
 
 const MAX_FILE_SIZE_MB = 40;
 
+// Uploaded photos often come straight from a camera (6000+ px, several MB).
+// Scale them down to this longest side — wider than any slot on the site.
+const MAX_IMAGE_DIMENSION = 2000;
+const OPTIMIZABLE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
@@ -26,12 +32,12 @@ export class FilesService {
   ) {}
 
   async upload(file: BufferedFile, user: IUserSession): Promise<FileResponseDto> {
-    const fileBuffer = file.buffer as Buffer;
-    if (fileBuffer.length / 1_000_000 > MAX_FILE_SIZE_MB) {
+    if ((file.buffer as Buffer).length / 1_000_000 > MAX_FILE_SIZE_MB) {
       throw new AppException(ErrorCodes.FILE_TOO_LARGE, {
         args: { limit: `${MAX_FILE_SIZE_MB}MB` },
       });
     }
+    const fileBuffer = await this.optimizeImage(file.buffer as Buffer, file.mimetype);
 
     const bucketName = this.env.get('MINIO_BUCKET');
 
@@ -96,9 +102,14 @@ export class FilesService {
       throw new AppException(ErrorCodes.FILE_NOT_FOUND);
     }
 
+    // Content-Length comes from the stored object, not files.size: objects may be
+    // recompressed in place after upload, and a stale length breaks the response.
+    let size: number;
     let stream: Readable;
     try {
-      stream = await this.minio.getObjectStream(this.objectName(file), file.bucketName);
+      const objectName = this.objectName(file);
+      ({ size } = await this.minio.getObjectInfo(objectName, file.bucketName));
+      stream = await this.minio.getObjectStream(objectName, file.bucketName);
     } catch (error) {
       // The object store already maps a missing object to FILE_NOT_FOUND (404);
       // preserve that (and any other domain error) instead of masking it as a 500.
@@ -120,7 +131,40 @@ export class FilesService {
       `${download ? 'attachment' : 'inline'}; ` +
       `filename*=UTF-8''${encodeURIComponent(file.name)}`;
 
-    return new StreamableFile(stream, { type: file.type, disposition, length: file.size });
+    return new StreamableFile(stream, { type: file.type, disposition, length: size });
+  }
+
+  /**
+   * Downscale and recompress a JPEG/PNG/WebP upload, keeping its format (so the
+   * stored extension and MIME type stay valid). Anything else, or a result that
+   * isn't smaller, is stored untouched; an optimization failure never fails the
+   * upload. `rotate()` bakes in the EXIF orientation, and re-encoding drops the
+   * rest of the metadata (camera, GPS).
+   */
+  private async optimizeImage(buffer: Buffer, mimetype: string): Promise<Buffer> {
+    if (!OPTIMIZABLE_IMAGE_TYPES.has(mimetype)) {
+      return buffer;
+    }
+    try {
+      const image = sharp(buffer, { failOn: 'none' })
+        .rotate()
+        .resize(MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+      const optimized =
+        mimetype === 'image/png'
+          ? await image.png({ palette: true, quality: 90, compressionLevel: 9 }).toBuffer()
+          : mimetype === 'image/webp'
+            ? await image.webp({ quality: 82 }).toBuffer()
+            : await image.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+      return optimized.length < buffer.length ? optimized : buffer;
+    } catch (error) {
+      this.logger.warn(
+        `Image optimization skipped: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return buffer;
+    }
   }
 
   /** Object key for a stored file: the persisted `path`, or derived for old rows. */
