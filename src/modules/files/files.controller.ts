@@ -1,12 +1,14 @@
 import {
   Controller,
   Get,
+  Header,
   HttpStatus,
   Ip,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
   UploadedFile,
   UploadedFiles,
   UseGuards,
@@ -23,6 +25,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 
 import { FilesService } from './files.service';
 import { BufferedFile } from './interfaces/file.interface';
@@ -109,12 +112,25 @@ export class FilesController {
     description: 'Binary file stream (inline or as an attachment).',
     schema: { type: 'string', format: 'binary' },
   })
-  getFile(
+  // A file id always points to the same content (every upload gets a new id),
+  // so browsers and proxies can cache it indefinitely.
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
+  async getFile(
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: GetFileQueryDto,
     @User() user: IUserSession | undefined,
     @Ip() ip: string,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.filesService.getFile(id, query, user, ip);
+    const file = await this.filesService.getFile(id, query, user, ip);
+
+    // Nest pipes the MinIO stream into the response but never destroys it when the
+    // client disconnects early (e.g. the browser cancels an image load). The
+    // abandoned stream then keeps its MinIO socket and buffered data forever —
+    // thousands of these exhausted the kernel's TCP memory and made every
+    // connection on the host crawl. Destroying it on close releases the socket;
+    // after a normal finish this is a no-op.
+    res.once('close', () => file.getStream().destroy());
+    return file;
   }
 }

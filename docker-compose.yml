@@ -3,8 +3,14 @@ version: '3.9'
 services:
   prod:
     image: foreigncouncil/landing-api:latest
+    # Host-mode publish: nginx on the host proxies to 127.0.0.1:5001 directly
+    # instead of through the swarm ingress mesh (an extra IPVS/overlay hop that
+    # buys nothing on a single node).
     ports:
-      - "5001:5001"
+      - target: 5001
+        published: 5001
+        protocol: tcp
+        mode: host
     env_file:
       - .env.prod
     # /health runs `SELECT 1` and reports "database":"up"/"down". Grepping the body
@@ -29,9 +35,9 @@ services:
       update_config:
         parallelism: 1
         delay: 10s
-        # Start the new task and wait for it to be healthy before stopping the old
-        # one — avoids a redeploy window with no serving replica.
-        order: start-first
+        # A host-mode port can be bound by only one task at a time, so the old task
+        # must stop before the new one starts (start-first would never converge).
+        order: stop-first
       resources:
         limits:
           cpus: '1.0'
